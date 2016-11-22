@@ -1,0 +1,379 @@
+﻿<AML>
+ <Item type="Method" id="7DF654B2B5B240DD8280FC173577A720" action="add">
+  <execution_allowed_to keyed_name="World" type="Identity">A73B655731924CD0B027E4F4D5FCC0A9</execution_allowed_to>
+  <method_code><![CDATA[//****************************************************************************************
+// [AUTHOR]: GS
+// [CREATED ON]: 2016-11-21
+// [USER STORY]: 
+// ---------------------------------------------------------------------------------------
+// [DESCRIPTION]: 
+// StructureNavigator
+// ---------------------------------------------------------------------------------------
+// [CHANGES]:
+// REF NO      DATE             WHO       DETAIL
+//****************************************************************************************/
+//Constant values
+var METHOD_NAME_PROCESSOR = "GetNodesForStructure";
+
+//Runtime variables and scoping
+var innovator = helper.getInnovator();
+var panes;
+var paneContent;
+var structureContainer = document.getElementsByName("structureContainer")[0];
+var designMode = false;
+var treeStore = createModel([]);
+var displayedItem;
+var contentFrame;
+var contentWindow;
+var icons = [];
+
+//Events
+top.aras.registerEventHandler("ItemSave", window, function() {
+	viewMode(designMode,true);
+});
+
+//Initial load
+viewMode(!designMode);
+
+//Function definitions
+
+/**
+* Opens an item link when clicked
+**/
+function handleLinkClick() {
+	top.aras.uiShowItem(this["type"], this["target"]);
+}
+
+/**
+* Creates a container with a fixed pane layout (1 left, 2 right)
+* Returns the pane references
+* @param {object} anchor - ID or element to place the panes in the dom
+**/
+function initPanes(anchor) {
+	var contentPanes = {
+		container:{}
+	};
+	require(["dijit/layout/BorderContainer", "dijit/layout/ContentPane","dojo/dom-construct", "dojo/dom-style", "dojo/domReady!"], function(BorderContainer, ContentPane, domConstruct, domStyle){
+		contentPanes.container.outerBorderContainer = new BorderContainer({
+			style: "height: 100%; width:100%;",
+			gutters: true,
+			liveSplitters: false
+		});
+		
+		contentPanes.container.rightBorderContainer = new BorderContainer({
+			style: "height: 100%; width:100%;",
+			gutters: true,
+			liveSplitters: false
+		});
+		
+		contentPanes.left = new ContentPane({
+			region: "left",
+			style: "width: 200px",
+			splitter: true
+		});
+		
+		
+		var contentForm = domConstruct.create("div");
+		
+		var contentArea = domConstruct.create("div", {
+			id:"contentArea",
+			style:"width:100%;"
+		});
+		domConstruct.place(contentArea, contentForm);
+		
+		contentFrame = domConstruct.create("iframe", {
+                    Class: "panel-body"
+                });
+				
+        require(["dojo/dom-attr"], function(domAttr) {
+            domAttr.set(contentFrame, "id", "frameFormArea");
+            domStyle.set(contentFrame, "backgroundColor", "#fff");
+            domStyle.set(contentFrame, "border", "0");
+            domStyle.set(contentFrame, "position", "absolute");
+            domStyle.set(contentFrame, "left", "0px");
+            domStyle.set(contentFrame, "width", "100%");
+            domStyle.set(contentFrame, "height", "calc(100% - 38px)");
+            domStyle.set(contentFrame, "overflow", "hidden");
+        });
+        domConstruct.place(contentFrame, contentArea);
+		
+		contentPanes.right = new ContentPane({
+			region: "center",
+			content: contentForm,
+			splitter: true
+		});
+		
+		contentPanes.container.outerBorderContainer.addChild(contentPanes.left);
+		contentPanes.container.outerBorderContainer.addChild(contentPanes.right);
+		
+		contentPanes.container.outerBorderContainer.placeAt(anchor);
+		contentPanes.container.outerBorderContainer.startup();
+		contentPanes.container.rightBorderContainer.startup();
+		
+		contentWindow = contentFrame.contentWindow;
+	});
+	return contentPanes;
+}
+
+/**
+* Creates a tree in the dom
+* Returns the tree object
+* @param {object} anchor - ID or element to place the tree in the dom
+* @param {object} model - Model for the tree
+**/
+function initTree(anchor,model) {
+	var tree;
+	var timeout;
+	
+	require(["dijit/registry", "dojo/_base/declare", "dojo/_base/connect","dojo/aspect", "dojo/parser", "dojo/ready", "dojo/store/Memory", "dojo/store/Observable", "dijit/Tree", "dijit/tree/ObjectStoreModel", "dojo/dom", "dojo/_base/json", "dojo/_base/array", "dojo/dom-construct", "dijit/tree/dndSource", "dojo/_base/lang", "dojo/domReady!"], 
+	function(registry, declare, connect, aspect, parser, ready, Memory, Observable, Tree, ObjectStoreModel, dom, json, array, domConstruct, dndSource, lang){
+		var FormatableTreeNode = declare(Tree._TreeNode, {
+			stripTags: function(html) {
+				var str = html.replace(/<\/?[^>]+(>|$)/g,"");
+				var tDiv = domConstruct.create("iframe", { innerHTML: str });
+				return tDiv.textContent || tDiv.innerText || "";
+			},
+			_setLabelAttr: function(label) {
+				var label = this.stripTags(label);
+				if(label === "" || this.item.Id === label) {
+					label = "New";
+				}
+				
+				if (this.labelNode.appendChild) {
+				   if (this.labelNode.hasChildNodes()) {
+						var nodeChildNodes = this.labelNode.childNodes;
+						var anzNodes = nodeChildNodes.length
+						for (var i=0; i<anzNodes; i++) {
+							this.labelNode.removeChild(nodeChildNodes[0]); // index 0  because after remove is another Child on index 0
+						}
+					}
+					var icon = loadIcons(this.item.Type);
+					if (icon) {
+						var image = document.createElement("img");
+						image.src = icon;
+						image.className = "treeIcon";
+						this.labelNode.appendChild(image);
+					}
+					
+					var textNode = document.createTextNode(label);
+					this.labelNode.appendChild(textNode);
+		 
+				} else {
+					this.labelNode.innerHTML = label;
+				}
+			}
+		});
+		
+		tree = new Tree({
+			showRoot: true,
+			model: model,
+			autoExpand: false,
+			getIconClass: function(item, opened){
+				return (!item || this.model.mayHaveChildren(item)) ? (opened ? "dijitFolderOpened" : "dijitFolderClosed") : null;
+			},
+			_createTreeNode: function(args){
+			   return new FormatableTreeNode(args);
+			},
+			onClick: function(item, node, event) {
+				if (timeout) {
+					clearTimeout(timeout);
+				}
+				timeout = setTimeout(function () {
+					uiShowItemOnPage(node.item.Id, node.item.Type);
+				},200);
+			},
+				
+			onDblClick: function(item) {
+				uiShowItemExitus(item.Id, item.Type);
+            }
+			//onClick: loadMaterials
+		});
+		tree.placeAt(anchor);
+		tree.startup();
+	});
+	return tree;
+}
+
+/**
+* get item type icon definition and path
+* @param {string} type - item type name
+**/
+function loadIcons(type) {
+    var icon = icons[type];
+    if (!icon) {
+        var itemType = innovator.newItem("ItemType", "get");
+        itemType.setProperty("name", type);
+        itemType.setAttribute("select", "open_icon");
+        itemType = itemType.apply();
+        if (itemType && !itemType.isError() && !itemType.isCollection()) {
+            icon = itemType.getProperty("open_icon");
+            icons[type] = icon;
+        }
+    }
+    return icon;
+}
+
+/**
+* show the selected item in a separate UI pane
+* @param {string} id - item id
+* @param {string} type - item type
+**/
+function uiShowItemOnPage(id, type) {
+    // Show item details on the form
+    var item = aras.newIOMItem(type, 'get');
+    item.setProperty('id', id.substring(0,32));
+    item = item.apply();
+
+    if (item.getItemCount() === 1) {
+        // Form type may be "view" or "edit"
+        var formType = "view";
+		if(aras.isLockedByUser(item.node)) {
+			formType = "edit";
+		}
+		
+		if (item.getAttribute("type", "") === "File") {
+			aras.uiShowItem("File", item.getProperty("id", ""));
+		}
+		else {
+			aras.uiShowItemInFrameEx(contentWindow, item.node, formType, 0);
+		}
+		displayedItem = item.node;
+    }
+}
+
+function uiShowItemExitus(id, type) {
+    var item = aras.newIOMItem(type, 'get');
+    item.setProperty('id', id);
+    item = item.apply();
+    item.removeAttribute("action");
+	
+	setTimeout(function() {
+		aras.uiShowItem(type, item.getProperty("id"));
+	},0);
+}
+
+/**
+* Creates a store model for the tree
+* Returns the model
+* @param {object} data - (optional) Initial store data
+**/
+function createModel(data) {
+	var model;
+	var rootItemId = document.thisItem.getID();
+	
+	require(["dojo/store/Memory", "dijit/tree/ObjectStoreModel", "dojo/domReady!"], function(Memory, ObjectStoreModel){
+		var store = new Memory({
+			data:data || [],
+			label:"Name",
+			idProperty: "Id",
+			childrenCache:{},
+			getChildren: function(object){
+				var childrens = (this.childrenCache[object.Id] || (this.childrenCache[object.Id] = this.query({ Parent: object.Id })));	
+				if (!childrens || childrens.length === 0) {
+					this.childrenCache = getChildsFromServer(object, store);
+					childrens = (this.childrenCache[object.Id] || (this.childrenCache[object.Id] = this.query({ Parent: object.Id })));	
+				}
+				return childrens;
+			}
+		});
+		
+		store.add({
+			Id: rootItemId,
+			Type: document.thisItem.getAttribute("type", ""),
+			Name: document.thisItem.getProperty("keyed_name", ""),
+			isRoot: true
+		});
+		
+		model = new ObjectStoreModel({
+			store: store,
+			labelAttr: "Name",
+			labelType: "html",
+			query: {
+				Id: rootItemId
+			},
+			mayHaveChildren: function(object) {
+				//return (this.store.getChildren(object).length > 0);
+				return true;
+			}
+		});
+	});
+	return model;
+}
+
+function getChildsFromServer(object, store) {
+	var process = [{
+		ItemId: object.Id,
+		ItemType: object.Type
+	}];
+	var jsonProcess = dojo.toJson(process);
+	var nodesResult = innovator.applyMethod(METHOD_NAME_PROCESSOR, jsonProcess);
+	var childrensOfObject;
+	
+	if(!nodesResult.isError()) {
+		try {
+			var childrensOfObject = dojo.fromJson(nodesResult.getResult());
+			helper.forEach(childrensOfObject, function (singleChild) {
+				store.add(singleChild);
+			});
+			this.childrenCache = childrensOfObject;
+		}
+		//Catch any errors that might get thrown and display the error as a message
+		catch(error) {
+			aras.AlertError(error.message);
+		}
+	}
+	else {
+		aras.AlertError(nodesResult.getErrorString());
+	}
+	return childrensOfObject;
+}
+
+
+/**
+* Destroys all visible elements and objects inside the pane
+**/
+function destroyView() {
+	if(!helper.isNullOrUndefined(panes)) {
+		if(panes.container) {
+			helper.forEach(panes.container,function(element) {
+				element.destroyRecursive();
+			});
+		}
+		else {
+			panes.destroyRecursive();
+		}
+		panes = null;
+	}
+}
+
+/**
+* Handles the presentation depending on the view mode (Design or assigned)
+* @param {bool} isDesignMode - true for design mode
+* @param {bool} forceReload - (optional) True to force a reload
+**/
+function viewMode(isDesignMode, forceReload) {
+	if(isDesignMode == designMode && !forceReload) {
+		return;
+	}
+	else {
+		if(forceReload) {
+			treeStore = createModel(getDbomTreeData(document.thisItem.getID()));
+		}
+		paneContent = {};
+		destroyView();
+		if(isDesignMode) {
+			panes = initPanes(structureContainer);
+			paneContent.tree = initTree(panes.left,treeStore);
+		}
+		else {
+			//Ignore
+		}
+		designMode = isDesignMode;
+	}
+}
+
+]]></method_code>
+  <method_type>JavaScript</method_type>
+  <name>StructureNavigator</name>
+ </Item>
+</AML>

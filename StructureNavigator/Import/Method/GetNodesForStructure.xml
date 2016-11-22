@@ -1,0 +1,278 @@
+﻿<AML>
+ <Item type="Method" id="5BD09B72CBCB4FC0BB761B8FA7827E1C" action="add">
+  <execution_allowed_to keyed_name="World" type="Identity">A73B655731924CD0B027E4F4D5FCC0A9</execution_allowed_to>
+  <method_code><![CDATA[//MethodTemplateName=CSharpInOut;
+/****************************************************************************************
+[AUTHOR]:     GS         
+[CREATED ON]: 
+[USER STORY]: 
+---------------------------------------------------------------------------------------
+[DESCRIPTION]: 
+
+---------------------------------------------------------------------------------------
+[CHANGES]:
+REF NO      DATE             WHO       DETAIL
+#00000                  
+****************************************************************************************/
+		InnovatorServer = InnovatorServerASP;
+		
+		System.Web.Script.Serialization.JavaScriptSerializer serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+		System.Collections.Generic.List<InputParameter> parameter = serializer.Deserialize<System.Collections.Generic.List<InputParameter>>(inDom.InnerText);
+		if (parameter.Count != 1)
+		{
+			throw new ArgumentException("Invalid number of input parameters. Allowed: 2");
+		}
+		else {
+			XmlNode result = outDom.SelectSingleNode("//Result");
+			result.InnerText = GetNodes(parameter.FirstOrDefault()).ToJSON();
+		}
+	}
+
+	private IServerConnection innovatorServer;
+	/// <summary>
+	/// Runtime value of the server connection. Must be initially set for any Innovator calls.
+	/// </summary>
+	private IServerConnection InnovatorServer
+	{
+		get
+		{
+			if (innovatorServer == null)
+			{
+				throw new ArgumentNullException("InnovatorServerASP");
+			}
+			return innovatorServer;
+		}
+		set
+		{
+			innovatorServer = value;
+		}
+	}
+
+	private Innovator innovator;
+	/// <summary>
+	/// Innovator server object
+	/// </summary>
+	private Innovator Innovator
+	{
+		get
+		{
+			if (innovator == null)
+			{
+				innovator = new Innovator(InnovatorServer);
+				Aras.Server.Core.CallContext CCO = ((Aras.Server.Core.IOMConnection) InnovatorServer).CCO;
+			}
+			return innovator;
+		}
+	}
+
+	/// <summary>
+	/// 
+	/// </summary>
+	/// <param name="parameter">Deserialized value of inDom</param>
+	/// <returns>Tree values</returns>
+	private System.Collections.Generic.List<TreeDataValue> GetNodes(InputParameter parameter)
+	{
+
+		if (String.IsNullOrEmpty(parameter.ItemId) || String.IsNullOrEmpty(parameter.ItemType))
+		{
+			throw new ArgumentNullException("GetMaterialStructure(parameter)");
+		}
+		
+		Item queryItem = Innovator.newItem(parameter.ItemType, "get");
+		queryItem.setID(parameter.ItemId);
+		queryItem.setAttribute("levels", "1");
+		
+		Item result = queryItem.apply();
+		
+		if (result.isError()) 
+		{
+			throw new Exception("No Result for: "+queryItem.ToString());
+		}
+		
+		System.Collections.Generic.List<TreeDataValue> treeStructure = new System.Collections.Generic.List<TreeDataValue>();
+		
+		Item relations = result.getItemsByXPath("//Relationships/Item");
+		int numberOfRelations = relations.getItemCount();
+		
+		for (int i=0; i<numberOfRelations; i++) 
+		{
+			Item relation = relations.getItemByIndex(i);
+			Item relatedItem = relation.getRelatedItem();
+			
+			Item element = null;
+			
+			if (relatedItem != null)
+			{
+				element = relatedItem;
+			}
+			else 
+			{
+				element = relation;
+			}
+			
+			if (element != null) {
+				Item itemType = GetItemType(element.getAttribute("typeId"));
+				
+				string identifier = element.getProperty("id")+Innovator.getNewID();
+				string type = element.getAttribute("type");
+				string name = element.getProperty("keyed_name", "");
+				
+				if (itemType.getItemCount() == 1)
+				{
+					name = itemType.getProperty("label", itemType.getProperty("name", ""), "de")+": "+element.getProperty("keyed_name", "");
+				}
+				
+				TreeDataValue dataValue = new TreeDataValue(identifier, type, name , parameter.ItemId);
+				treeStructure.Add(dataValue);
+			}
+		}
+		
+		return treeStructure;
+	}
+	
+	private Item GetItemType(string itemTypeIdentifier)
+	{
+		Item itemQuery = Innovator.newItem("ItemType", "get");
+		itemQuery.setID(itemTypeIdentifier);
+		itemQuery.setAttribute("select", "id, name, label, open_icon");
+		return itemQuery.apply();
+	}
+}
+
+/// <summary>
+/// Object for deserializing the inDom
+/// </summary>
+public struct InputParameter
+{
+	private string itemId;
+	private string itemType;
+
+	public string ItemId
+	{
+		get
+		{
+			return itemId;
+		}
+		set
+		{
+			itemId = value;
+		}
+	}
+	
+	public string ItemType
+	{
+		get
+		{
+			return itemType;
+		}
+		set
+		{
+			itemType = value;
+		}
+	}
+}
+
+/// <summary>
+/// Object for describing a tree entry
+/// Serializable
+/// </summary>
+public struct TreeDataValue
+{
+	private string id;
+	private string name;
+	private string type;
+	private string parent;
+
+	/// <summary>
+	/// Constructor with all properties of this object
+	/// </summary>
+	/// <param name="id">ID</param>
+	/// <param name="name">Name</param>
+	/// <param name="materialTypeId">Material type ID</param>
+	/// <param name="materialTypeName">Material type name</param>
+	/// <param name="parent">ID of the parent element</param>
+	public TreeDataValue(string id, string type, string name, string parent)
+	{
+		this.id = id;
+		this.type = type;
+		this.name = name;
+		this.parent = parent;
+	}
+
+	/// <summary>
+	/// ID of the item
+	/// </summary>
+	public string Id
+	{
+		get
+		{
+			return id;
+		}
+	}
+
+	/// <summary>
+	/// Name of the item
+	/// </summary>
+	public string Name
+	{
+		get
+		{
+			return name;
+		}
+	}
+
+	/// <summary>
+	/// Material type ID
+	/// </summary>
+	public string Type
+	{
+		get
+		{
+			return type;
+		}
+	}
+
+	/// <summary>
+	/// ID of the parent element
+	/// </summary>
+	public string Parent
+	{
+		get
+		{
+			return parent;
+		}
+	}
+}
+
+/// <summary>
+/// The JSONHelper converts an object to JSON
+/// </summary>
+public static class JSONHelper
+{
+	/// <summary>
+	/// Generic serializer for arbitary C# objects to JSON
+	/// </summary>
+	/// <param name="obj">Object to serialize</param>
+	/// <param name="recursionDepth">Max depth of recursion (0 = infinite)</param>
+	/// <returns>Serialized JSON string</returns>
+	public static string ToJSON(this object obj, int recursionDepth)
+	{
+		System.Web.Script.Serialization.JavaScriptSerializer serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+		if (recursionDepth > 0)
+		{
+			serializer.RecursionLimit = recursionDepth;
+		}
+		return serializer.Serialize(obj);
+	}
+	/// <summary>
+	/// Overload. See: JSONHelper.ToJSON(this object, int)
+	/// </summary>
+	/// <param name="obj">Object to serialize</param>
+	/// <returns>Serialized JSON string</returns>
+	public static string ToJSON(this object obj)
+	{
+		return obj.ToJSON(0);]]></method_code>
+  <method_type>C#</method_type>
+  <name>GetNodesForStructure</name>
+ </Item>
+</AML>

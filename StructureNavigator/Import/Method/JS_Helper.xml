@@ -1,0 +1,467 @@
+﻿<AML>
+ <Item type="Method" id="4A86B90623E94AFB81E986E7BDC4ED09" action="add">
+  <execution_allowed_to keyed_name="World" type="Identity">A73B655731924CD0B027E4F4D5FCC0A9</execution_allowed_to>
+  <method_code><![CDATA[//****************************************************************************************
+// [AUTHOR]: JS         
+// [CREATED ON]: 2016-03-23
+// [USER STORY]: 
+// ---------------------------------------------------------------------------------------
+// [DESCRIPTION]: 
+// Collection of generic helper functions
+// Functions are available in helper namespace
+// ---------------------------------------------------------------------------------------
+// [CHANGES]:
+// REF NO      DATE             WHO       DETAIL
+//			2016-06-08			JS		someOrEvery now can handle null or undefined correctly
+//			2016-06-08			JS		Added convertTypeNameToIdentifier and convertTypeIdentifierToName
+//****************************************************************************************
+
+var domParser = new DOMParser();
+var xmlSerializer = new XMLSerializer();
+var memorizeConvertTypeIdentifierToName = {};
+var memorizeconvertTypeNameToIdentifier = {};
+var innovator;
+
+/**
+* Mixes two objects
+* Returns the resulting object
+* @param {object} target - Target object to change
+* @param {object} properties - Properties to mixin
+* @param {bool} cloneTarget - (Optional) When true the target item is not modified
+**/
+function mixin(target, properties, cloneTarget) {
+	var object;
+	if(cloneTarget) {
+		object = mixin({},target);
+	}
+	else {
+		object = target;
+	}
+	if(typeof target === "object" && typeof properties === "object") {
+		for(var key in properties) {
+			object[key] = properties[key];
+		}
+	}
+	return object;
+}
+
+/**
+* Map implementation
+* Returns a new array with the result
+* @param {object} array - Array or object supported by the forEach implementation
+* @param {function} callback - Worker function
+* @param {bool} context - (Optional) Function context
+**/
+function map(array, callback, context) {
+	var result = [];
+	forEach(array, function(element,i) {
+		result.push(callback.call(this,element,i));
+	},context);
+	return result;
+}
+
+/**
+* Returns the first key of an object
+* Not guaranteed that two call return the same result
+* @param {object} obj - Object to get the key from
+**/
+function firstIndex(obj) {
+    for (var index in obj) {
+        return index;
+    }
+}
+
+/**
+* Creates a new xml object
+* Returns the xml object
+* @param {string} xmlString - initialitation string, e.g. "<foo></foor>"
+**/
+function generateXml(xmlString) {
+	return domParser.parseFromString(xmlString, "text/xml");
+}
+
+/**
+* Stringifies an XML document
+* Returns the XML as a string
+* @param {xmlDocument} document - initialitation string, e.g. "<foo></foor>"
+**/
+function serializeXmlToString(document) {
+	return xmlSerializer.serializeToString(document);
+}
+
+/**
+* Checks if an object is null or undefined
+* Returns true if it is null or undefined else false
+* @param {object} object - initialitation string, e.g. "<foo></foor>"
+**/
+function isNullOrUndefined(object) {
+	return (object === null || typeof object === "undefined");
+}
+
+/**
+* Generates a UUID 
+* Implemtation of RFC4122 version 4
+* Returns a UUID as a string
+**/
+function generateUniqueIdentifier() {
+	return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (character){
+		var randomNumber = Math.random()*16|0;
+		return (character == "x" ? randomNumber : (randomNumber&0x3|0x8)).toString(16);
+	});
+}
+
+/**
+* Generates a new Aras ID
+* Returns ID as a string
+**/
+function getNewArasID() {
+	return getInnovator().getNewID();
+}
+
+/**
+* Gets the innovator object
+* Returns the innovator object
+**/
+function getInnovator() {
+	if(!innovator) {
+		innovator = new top.Innovator();
+	}
+	return innovator;
+}
+
+/**
+* Shows a search dialog in the Innovator
+* @param {string} itemTypeName - Item type name
+* @param {object} extraParameters - Additional options
+* @param {function} callback - Function called after selection
+**/
+function showSearchDialog(itemTypeName, extraParameters, callback) {
+    var parameters = { 
+        aras: top.aras, 
+        itemtypeName: itemTypeName, 
+        callback: callback
+    };
+	mixin(parameters, extraParameters);
+    var options = { 
+        dialogHeight:600,
+        dialogWidth:800, 
+        resizable:true
+    };
+    var aWindow = top.aras.getMainWindow() === window.top ? top.aras.getMainWindow().document.getElementById("main").contentWindow : top;
+    top.aras.modalDialogHelper.show("SearchDialog", aWindow, parameters, options);
+}
+
+/**
+* forEach implementation
+* Supports any javascript object
+*	- Item: Each single item
+* 	- Object: Each property
+*	- Array: Each value
+*	- String: Every character
+*	- Any other: Called once
+* @param {object} object - Object to iterate through
+* @param {function} callback - Function to call on each iteration
+* @param {object} context - (Optional) Function context
+**/
+function forEach(object, callback, context) {
+	helper.every(object, function(element,i) {
+		callFunction(callback,context,element,i);
+		return true;
+	}, context);
+}
+
+/**
+* Function factory for some and every implementations (short circuit returns true if every [every] or any [some] iteration returns true else false)
+* See forEach for object behaviour
+* Returns a some or every implementation
+* @param {bool} isSome - Returns a some implementation if true else every
+**/
+function someOrEvery(isSome) {
+	return function(object, callback, context) {
+		var i = 0;
+		var result;
+		if(typeof object === "string") {
+			object = object.split("");
+		}
+		if(Object.prototype.toString.call(object) === "[object Array]") {
+			for(; i < object.length; i++) {
+				result = !callFunction(callback,context,object[i],i);
+				if(isSome ^ result) {
+					return !result;
+				}
+			}
+		}
+		else if(typeof object === "object") {
+			if(object.getItemCount && object.getItemByIndex) {
+				for(; i < object.getItemCount(); i++) {
+					result = !callFunction(callback,context,object.getItemByIndex(i),i);
+					if(isSome ^ result) {
+						return !result;
+					}
+				}
+			}
+			else {
+				for(var key in object) {
+					result = !callFunction(callback,context,object[key],i++);
+					if(isSome ^ result) {
+						return !result;
+					}
+				}
+			}
+		}
+		else {
+			return !(isNullOrUndefined(object) || !callFunction(callback,context,object,i));
+		}
+		return !isSome;
+	}
+}
+
+/**
+* Internal function for calling functions with context
+* Used in loops
+* NOT available via helper namespace
+* Returns call result
+* @param {function} callback - Function to call
+* @param {object} context - Function context
+* @param {object} element - Element parameter
+* @param {number} i - Current iteration
+**/
+function callFunction(callback, context, element, i) {
+	if(context) {
+		return callback.call(context,element,i);
+	}
+	else {
+		return callback(element,i);
+	}
+}
+
+/**
+* Checks if an identity contains the current user
+* Returns true if user is part of any identity defined
+* @param {object} identities - Collection of identity names
+**/
+function identityContainsUser(identities) {
+	var identityNames = map(identities, function(element) { return "'" + element + "'"; }).join(",");
+    var userIdentities = top.aras.getIdentityList();
+    var membershipItems = getInnovator().newItem("Identity","get");
+    membershipItems.setAttribute("select","id");
+    membershipItems.setProperty("name",identityNames);
+    membershipItems.setPropertyCondition("name","in");
+	
+	return helper.some(membershipItems.apply(), function(element) {
+		var identityId = element.getID();
+		if(userIdentities.indexOf(identityId) !== -1) {
+			return true;
+		}
+		else {
+			return false;
+		}
+	});
+}
+
+/**
+* Recursively generates a list of all identities a user belongs to
+* Returns array of identity names
+* @param {item/string} user - User item or ID
+* @param {bool} includeAlias - Specify wether the result should include the alias identity or not
+**/
+function getUserIdentities(user, includeAlias) {
+	var identities = [];
+	var seenValue = {};
+	var innovator = getInnovator();
+	var userIdentifier;
+	if(user.getID) {
+		userIdentifier = user.getID();
+	}
+	//Assume user is ID
+	else if(typeof user === "string") {
+		userIdentifier = user;
+	}
+	else {
+		throw "User not defined.";
+	}
+	var alias = innovator.newItem("Alias","get");
+	alias.setProperty("source_id",userIdentifier);
+	alias.setAttribute("select","related_id");
+	alias.setAttribute("related_expand","1");
+	forEach(alias.apply(),function(element) {
+		var aliasIdentity = element.getPropertyItem("related_id");
+		if(includeAlias) {
+			aliasIdentity.setAttribute("select","name");
+			aliasIdentity = aliasIdentity.apply("get");
+			identities.push(aliasIdentity.getProperty("name"));
+		}
+		getMemberIdentities(aliasIdentity);
+	});
+	return identities;
+	
+	function getMemberIdentities(identity) {
+		var identityIdentifier = identity.getID();
+		var member = innovator.newItem("Member","get");
+		member.setProperty("related_id",identityIdentifier);
+		member.setAttribute("select","source_id");
+		forEach(member.apply(), function(element) {
+			var sourceIdentity = element.getPropertyItem("source_id");
+			var sourceIdentityIdentifier = sourceIdentity.getID();
+			//Check an identity only once
+			//Prevents infinite recursion if a circle has been configured, prevents duplicates and improves performance
+			if(seenValue[sourceIdentityIdentifier] ? false : (seenValue[sourceIdentityIdentifier] = true)) {
+				sourceIdentity.setAttribute("select","name");
+				sourceIdentity = sourceIdentity.apply("get");
+				var identityName = sourceIdentity.getProperty("name");
+				identities.push(identityName);
+				getMemberIdentities(sourceIdentity);
+			}
+		});
+	}
+}
+
+/**
+* Adds a flag to a number
+* Returns the new flag value
+* @param {number/string} value - Initial flag
+* @param {number} flag - Flag to add
+**/
+function addFlag(value,flag) {
+	if(typeof value === "string") {
+		value = convertHexStringToInt(value);
+	}
+	return (value | flag);
+}
+
+/**
+* Removes a flag from a number
+* Returns the new flag value
+* @param {number/string} value - Initial flag
+* @param {number} flag - Flag to remove
+**/
+function removeFlag(value,flag) {
+	if(typeof value === "string") {
+		value = convertHexStringToInt(value);
+	}
+	return (value & ~flag);
+}
+
+/**
+* Checks if a flag is set
+* Returns true (has flag) or false (flag not set)
+* @param {number/string} value - Initial flag
+* @param {number} flag - Flag to check
+**/
+function hasFlag(value,flag) {
+	if(typeof value === "string") {
+		value = convertHexStringToInt(value);
+	}
+	return ((value & flag) === flag);
+}
+
+/**
+* Converts an integer to a string in hex (base 16)
+* Returns the new string
+* @param {number} value - Integer to convert
+**/
+function convertIntToHexString(value) {
+	return value.toString(16);
+}
+
+/**
+* Converts a hex string to an integer
+* Returns the integer
+* @param {number} value - String to convert
+**/
+function convertHexStringToInt(value) {
+	if(!beginsWith(value,"0x")) {
+		value = "0x" + value;
+	}
+	return parseInt(value);
+}
+
+/**
+* Checks if a string begins with the needle
+* @param {string} string - String to search
+* @param {string} needle - Needle
+**/
+function beginsWith(string,needle) {
+	return (string.lastIndexOf(needle,0) === 0)
+}
+
+/**
+* Converts an ItemType ID to its name
+* Returns the ItemType name or null
+* @param {string} typeIdentifier - ID of the ItemType
+**/
+function convertTypeIdentifierToName(typeIdentifier) {
+	if(!typeIdentifier) {
+		return null;
+	}
+	return memorizeConvertTypeIdentifierToName[typeIdentifier] || (memorizeConvertTypeIdentifierToName[typeIdentifier] = (function() {
+		var itemType = getInnovator().newItem("ItemType","get");
+		itemType.setID(typeIdentifier);
+		itemType.setAttribute("select","name");
+		var itemTypeName;
+		if(helper.some(itemType.apply(),function(element) {
+			return !!(itemTypeName = element.getProperty("name"));
+		})) {
+			return itemTypeName;
+		}
+		else {
+			return null;
+		}
+	})());
+}
+
+/**
+* Converts an ItemType name to its ID
+* Returns the ItemType ID or null
+* @param {string} typeName - Name of the ItemType
+**/
+function convertTypeNameToIdentifier(typeName) {
+	if(!typeName) {
+		return null;
+	}
+	return memorizeconvertTypeNameToIdentifier[typeName] || (memorizeConvertTypeIdentifierToName[typeName] = (function() {
+		var itemType = getInnovator().newItem("ItemType","get");
+		itemType.setProperty("name",typeName);
+		itemType.setAttribute("select","id");
+		var itemIdentifier;
+		if(helper.some(itemType.apply(),function(element) {
+			return !!(itemIdentifier = element.getID());
+		})) {
+			return itemIdentifier;
+		}
+		else {
+			return null;
+		}
+	})());
+}
+
+//Add to helper namespace
+(function(helper) {
+	helper.mixin = mixin;
+	helper.firstIndex = firstIndex;
+	helper.generateXml = generateXml;
+	helper.serializeXmlToString = serializeXmlToString;
+	helper.isNullOrUndefined = isNullOrUndefined;
+	helper.generateUniqueIdentifier = generateUniqueIdentifier;
+	helper.getInnovator = getInnovator;
+	helper.getNewArasID = getNewArasID;
+	helper.showSearchDialog = showSearchDialog;
+	helper.forEach = forEach;
+	helper.some = someOrEvery(true);
+	helper.every = someOrEvery(false);
+	helper.map = map;
+	helper.identityContainsUser = identityContainsUser;
+	helper.getUserIdentities = getUserIdentities;
+	helper.addFlag = addFlag;
+	helper.removeFlag = removeFlag;
+	helper.hasFlag = hasFlag;
+	helper.convertIntToHexString = convertIntToHexString;
+	helper.convertHexStringToInt = convertHexStringToInt;
+	helper.beginsWith = beginsWith;
+	helper.convertTypeIdentifierToName = convertTypeIdentifierToName;
+	helper.convertTypeNameToIdentifier = convertTypeNameToIdentifier;
+})(window.helper = window.helper || {});]]></method_code>
+  <method_type>JavaScript</method_type>
+  <name>JS_Helper</name>
+ </Item>
+</AML>
